@@ -787,7 +787,6 @@ class GraphBuffer:
             )
             masks = (
                 (count >= min(2, n_frames - 1))
-                & (disps_v > 0.5 * disps_v.mean(dim=[1, 2], keepdim=True))
                 & (~self.masks[t_range, v])
             )
             pts_list.append(pts)
