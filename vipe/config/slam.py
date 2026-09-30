@@ -23,6 +23,14 @@ class BAConfig(BaseConfigSchema):
         "no sparse tracks) and falls back to the generic solver otherwise; an explicit true forces the fused "
         "path and raises on unsupported layouts."
     )
+    solver: Literal["legacy", "fused_v2"] = Field(
+        default="legacy",
+        description='Which fused-BA kernel implementation to use when `fused` selects the fused path. "legacy" '
+        "(default) is the original host-assembled Eigen/SimplicialLLT-backed solver and is unaffected by this "
+        'option. "fused_v2" is an opt-in, device-resident solver (GPU block assembly + GPU Cholesky, no host '
+        "round-trips) that produces numerically equivalent results with lower latency. Every existing config "
+        "defaults to legacy.",
+    )
     intrinsics_damping_scale: float = Field(
         gt=0.0,
         description="Multiplier for damping applied to optimized camera intrinsics.",
@@ -50,6 +58,42 @@ class SparseTracksConfig(BaseConfigSchema):
     name: Literal["dummy", "cuvslam"] = Field(
         description="Sparse-track provider. dummy disables external sparse tracks; cuvslam uses NVIDIA cuVSLAM."
     )
+
+
+class SlamWindowConfig(BaseConfigSchema):
+    """Sliding-window options for the long-sequence SLAM recipe (``pose_only_long``).
+
+    Presence of this subtree (``slam.window``) selects ``LongSequenceSLAMSystem``
+    instead of the standard ``SLAMSystem``: the keyframe buffer holds only a live
+    window of at most ``max_keyframes`` keyframes, and GPU memory stays O(window)
+    rather than O(sequence length).
+    """
+
+    max_keyframes: int = Field(ge=1, description="Maximum number of live keyframes kept in the GPU window.")
+    retire_chunk: int = Field(
+        ge=1, description="Number of oldest keyframes retired (moved to the CPU ledger) once the window fills."
+    )
+    local_ba_steps: int = Field(
+        default=5, ge=1, description="Number of local bundle-adjustment steps run on a chunk right before retirement."
+    )
+    max_cached_frames: int = Field(
+        default=2000,
+        ge=1,
+        description="Upper bound on the rolling raw-frame cache; forces an infill drain if exceeded, bounding host "
+        "memory even when retirement rarely fires (e.g. near-static footage).",
+    )
+    keep_map: bool = Field(
+        default=False,
+        description="Retain the sparse SLAM map across retirements. Increases host memory with sequence length.",
+    )
+
+    @field_validator("retire_chunk")
+    @classmethod
+    def validate_retire_chunk(cls, value: int, info) -> int:
+        max_keyframes = info.data.get("max_keyframes")
+        if max_keyframes is not None and value >= max_keyframes:
+            raise ValueError("retire_chunk must be smaller than max_keyframes")
+        return value
 
 
 class SLAMConfig(BaseConfigSchema):
@@ -100,10 +144,31 @@ class SLAMConfig(BaseConfigSchema):
     visualize: bool = Field(description="Stream SLAM internals to rerun for debugging.")
     keyframe_depth: str | None = Field(
         description="Metric depth model used on keyframes to recover scale. Examples include metric3d-small, "
-        "unidepth-l, moge, and dav3. Set to null to skip keyframe metric-depth recovery."
+        "unidepth-l, moge, moge2-l, and dav3. Set to null to skip keyframe metric-depth recovery."
     )
     ba: BAConfig = Field(description="Bundle-adjustment solver options.")
     sparse_tracks: SparseTracksConfig = Field(description="Sparse-track backend options.")
+    window: SlamWindowConfig | None = Field(
+        default=None,
+        description="Sliding-window options for the long-sequence SLAM recipe. Set (non-null) to select "
+        "LongSequenceSLAMSystem instead of the standard SLAMSystem; null (default) preserves standard behavior.",
+    )
+
+    @field_validator("window")
+    @classmethod
+    def validate_window(cls, value: SlamWindowConfig | None, info) -> SlamWindowConfig | None:
+        if value is None:
+            return value
+        frontend_window = info.data.get("frontend_window")
+        if frontend_window is not None:
+            low_water = value.max_keyframes - value.retire_chunk
+            min_low_water = frontend_window + 16
+            if low_water < min_low_water:
+                raise ValueError(
+                    f"slam.window: max_keyframes - retire_chunk = {low_water} would intrude on the frontend "
+                    f"optimization window; need at least frontend_window + 16 = {min_low_water}."
+                )
+        return value
 
     @field_validator("frontend_backend_iters")
     @classmethod
