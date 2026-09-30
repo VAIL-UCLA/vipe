@@ -52,4 +52,27 @@ class FrameDirStreamListConfig(BaseStreamListConfig):
     )
 
 
-StreamsConfig = Annotated[RawMP4StreamListConfig | FrameDirStreamListConfig, Field(discriminator="instance")]
+class RigCalibStreamListConfig(BaseStreamListConfig):
+    """Stream list that reads a multi-camera rig with known calibration."""
+
+    instance: Literal["vipe.streams.rig_calib_stream.RigCalibStreamList"] = Field(
+        description="Implementation class for rig-calibration stream lists."
+    )
+    calib_dir: str = Field(
+        default="calib",
+        description="Subdirectory under base_path containing cameras.yaml and transforms.yaml.",
+    )
+    reference_camera: str = Field(
+        default="camera_front",
+        description="Camera name used as the rig reference (rig center).",
+    )
+    camera_dir_suffix: str = Field(
+        default="_undist",
+        description="Suffix to strip from calibration camera names to locate frame directories.",
+    )
+
+
+StreamsConfig = Annotated[
+    RawMP4StreamListConfig | FrameDirStreamListConfig | RigCalibStreamListConfig,
+    Field(discriminator="instance"),
+]

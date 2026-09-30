@@ -61,14 +61,20 @@ class DefaultAnnotationPipeline(Pipeline):
 
         # The assertions make sure that the attributes are not estimated previously.
         # Otherwise it will be overwritten by the processors.
-        assert FrameAttribute.INTRINSICS not in video_stream.attributes()
-        assert FrameAttribute.CAMERA_TYPE not in video_stream.attributes()
         assert FrameAttribute.METRIC_DEPTH not in video_stream.attributes()
-        assert FrameAttribute.INSTANCE not in video_stream.attributes()
+        if self.init_cfg.instance is not None:
+            assert FrameAttribute.INSTANCE not in video_stream.attributes()
 
-        init_processors.append(
-            GeoCalibIntrinsicsProcessor(video_stream, camera_type=self.camera_type, model_cache=self.model_cache)
-        )
+        if self.init_cfg.intrinsics != "gt":
+            assert FrameAttribute.INTRINSICS not in video_stream.attributes()
+            assert FrameAttribute.CAMERA_TYPE not in video_stream.attributes()
+            init_processors.append(
+                GeoCalibIntrinsicsProcessor(video_stream, camera_type=self.camera_type, model_cache=self.model_cache)
+            )
+        else:
+            assert FrameAttribute.INTRINSICS in video_stream.attributes(), (
+                "When init.intrinsics='gt', each frame must already carry intrinsics."
+            )
         if self.init_cfg.instance is not None:
             init_processors.append(
                 TrackAnythingProcessor(

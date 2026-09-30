@@ -1,0 +1,10 @@
+instance: vipe.streams.rig_calib_stream.RigCalibStreamList
+
+base_path: ???
+frame_start: 0
+frame_end: -1
+frame_skip: 1
+cached: false
+calib_dir: calib
+reference_camera: camera_front
+camera_dir_suffix: _undist

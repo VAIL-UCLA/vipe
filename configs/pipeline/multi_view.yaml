@@ -1,0 +1,25 @@
+# Multi-view pipeline preset for camera rigs with known relative poses.
+# Inherits from the default pipeline with settings appropriate for n_views > 1.
+defaults:
+  - default
+
+slam:
+  # Keyframe depth models are unsupported for multi-view (global scale
+  # lies in the null-space when n_views > 1).
+  keyframe_depth: null
+
+  # Fused CUDA BA path only supports single-view. Multi-view requires the
+  # generic Gauss-Newton solver.
+  ba:
+    fused: false
+
+  # Cross-view reprojection factors are enabled by default for multi-view.
+  cross_view: true
+
+  # When rig poses are known from calibration, disable rig rotation
+  # optimization.
+  optimize_rig_rotation: false
+
+# Multi-view depth alignment model (e.g., mvd_dav3, unik3d)
+post:
+  depth_align_model: mvd_dav3
